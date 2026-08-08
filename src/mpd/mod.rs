@@ -79,11 +79,6 @@ impl MpdClient {
             .map_err(|e| anyhow::anyhow!("Failed to seek: {}", e))
     }
 
-    pub fn elapsed(&mut self) -> anyhow::Result<Option<Duration>> {
-        let status = self.status()?;
-        Ok(status.elapsed)
-    }
-
     pub fn append_song(&mut self, song: &Song) -> anyhow::Result<()> {
         self.client
             .push(song)
@@ -100,6 +95,18 @@ impl MpdClient {
         self.client
             .toggle_pause()
             .map_err(|e| anyhow::anyhow!("Failed to toggle pause: {}", e))
+    }
+
+    pub fn prev(&mut self) -> anyhow::Result<()> {
+        self.client
+            .prev()
+            .map_err(|e| anyhow::anyhow!("Failed to skip to previous: {}", e))
+    }
+
+    pub fn next(&mut self) -> anyhow::Result<()> {
+        self.client
+            .next()
+            .map_err(|e| anyhow::anyhow!("Failed to skip to next: {}", e))
     }
 
 }

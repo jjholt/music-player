@@ -71,6 +71,22 @@ impl App {
         }
     }
 
+    pub fn next(&mut self) {
+        if let Some(ref mut client) = self.mpd {
+            if let Err(e) = client.next() {
+                self.status_bar.set_message(Some(format!("Error: {}", e)));
+            }
+        }
+    }
+
+    pub fn prev(&mut self) {
+        if let Some(ref mut client) = self.mpd {
+            if let Err(e) = client.prev() {
+                self.status_bar.set_message(Some(format!("Error: {}", e)));
+            }
+        }
+    }
+
     pub fn trigger_database_update(&mut self) {
         if let Some(ref mut client) = self.mpd {
             match client.update_database() {
@@ -241,9 +257,4 @@ impl App {
 
         self.status_bar.draw(f, chunks[1], search_state);
     }
-}
-
-fn format_duration(d: Duration) -> String {
-    let secs = d.as_secs();
-    format!("{}:{:02}", secs / 60, secs % 60)
 }

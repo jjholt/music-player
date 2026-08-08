@@ -33,6 +33,12 @@ fn main() -> anyhow::Result<()> {
                         (KeyModifiers::NONE, KeyCode::Char('p')) => {
                             app.toggle_pause();
                         }
+                        (KeyModifiers::NONE, KeyCode::Char('>')) => {
+                            app.next();
+                        }
+                        (KeyModifiers::NONE, KeyCode::Char('<')) => {
+                            app.prev();
+                        }
                         (KeyModifiers::NONE, KeyCode::Char('1')) => {
                             app.set_view(ActiveView::Playlist);
                         }

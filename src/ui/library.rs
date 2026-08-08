@@ -19,6 +19,7 @@ pub enum LibraryColumn {
     Songs,
 }
 
+#[allow(unused)]
 #[derive(Debug, Default)]
 pub struct Selection {
     pub status: Option<String>,
