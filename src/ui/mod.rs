@@ -63,6 +63,14 @@ impl App {
         }
     }
 
+    pub fn toggle_pause(&mut self) {
+        if let Some(ref mut client) = self.mpd {
+            if let Err(e) = client.toggle_pause() {
+                self.status_bar.set_message(Some(format!("Error: {}", e)));
+            }
+        }
+    }
+
     pub fn trigger_database_update(&mut self) {
         if let Some(ref mut client) = self.mpd {
             match client.update_database() {

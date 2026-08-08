@@ -96,4 +96,10 @@ impl MpdClient {
         Ok(status.queue_len)
     }
 
+    pub fn toggle_pause(&mut self) -> anyhow::Result<()> {
+        self.client
+            .toggle_pause()
+            .map_err(|e| anyhow::anyhow!("Failed to toggle pause: {}", e))
+    }
+
 }

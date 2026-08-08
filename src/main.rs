@@ -30,6 +30,9 @@ fn main() -> anyhow::Result<()> {
                         (KeyModifiers::CONTROL, KeyCode::Enter) => {
                             app.trigger_database_update();
                         }
+                        (KeyModifiers::NONE, KeyCode::Char('p')) => {
+                            app.toggle_pause();
+                        }
                         (KeyModifiers::NONE, KeyCode::Char('1')) => {
                             app.set_view(ActiveView::Playlist);
                         }
