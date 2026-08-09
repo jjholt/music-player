@@ -101,17 +101,15 @@ impl LibraryView {
     }
 
     fn refresh_albums(&mut self) {
-        let artist = self
+        let artist: Option<&String> = self
             .artists
-            .get(self.artist_cursor)
-            .cloned()
-            .unwrap_or_default();
+            .get(self.artist_cursor);
         self.albums = self
             .all_songs
             .iter()
-            .filter(|s| s.artist.as_deref().unwrap_or("") == artist)
+            .filter(|&s| s.artist.as_ref() == artist)
             .filter_map(|s| song_tag_owned(s, "Album"))
-            .collect::<std::collections::BTreeSet<_>>()
+            .collect::<std::collections::BTreeSet<_>>() // Remove duplicates and sort
             .into_iter()
             .collect();
         self.album_cursor = 0;
@@ -121,19 +119,16 @@ impl LibraryView {
     fn refresh_songs(&mut self) {
         let artist = self
             .artists
-            .get(self.artist_cursor)
-            .cloned()
-            .unwrap_or_default();
+            .get(self.artist_cursor);
         let album = self
             .albums
             .get(self.album_cursor)
-            .cloned()
-            .unwrap_or_default();
+            .map(|c| c.as_str());
         self.songs = self
             .all_songs
             .iter()
-            .filter(|s| {
-                s.artist.as_deref().unwrap_or("") == artist && song_tag(s, "Album") == album
+            .filter(|&s| {
+                s.artist.as_ref() == artist && Some(song_tag(s, "Album")) == album
             })
             .cloned()
             .collect();
@@ -165,19 +160,16 @@ impl LibraryView {
             LibraryColumn::Albums => {
                 let artist = self
                     .artists
-                    .get(self.artist_cursor)
-                    .map(|s| s.as_str())
-                    .unwrap_or("");
+                    .get(self.artist_cursor);
                 let album = self
                     .albums
                     .get(self.album_cursor)
-                    .map(|s| s.as_str())
-                    .unwrap_or("");
+                    .map(|s| s.as_str());
                 let songs: Vec<Song> = self
                     .all_songs
                     .iter()
                     .filter(|s| {
-                        s.artist.as_deref().unwrap_or("") == artist && song_tag(s, "Album") == album
+                        s.artist.as_ref() == artist && Some(song_tag(s, "Album")) == album
                     })
                     .cloned()
                     .collect();
@@ -339,19 +331,16 @@ impl LibraryView {
             LibraryColumn::Albums => {
                 let artist = self
                     .artists
-                    .get(self.artist_cursor)
-                    .map(|s| s.as_str())
-                    .unwrap_or("");
+                    .get(self.artist_cursor);
                 let album = self
                     .albums
                     .get(self.album_cursor)
-                    .map(|s| s.as_str())
-                    .unwrap_or("");
+                    .map(|s| s.as_str());
                 let songs = self
                     .all_songs
                     .iter()
                     .filter(|s| {
-                        s.artist.as_deref().unwrap_or("") == artist && song_tag(s, "Album") == album
+                        s.artist.as_ref() == artist && Some(song_tag(s, "Album")) == album
                     })
                     .cloned()
                     .collect();
