@@ -7,9 +7,13 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState},
 };
 
-use crate::vim::{
-    motion::{MotionAction, MotionState, VimNavigable, handle_motion_key},
-    search::{SearchState, VimSearchable, handle_search_input, handle_search_normal},
+use crate::{
+    mpd::MpdClient,
+    ui::App,
+    vim::{
+        motion::{MotionAction, MotionState, VimNavigable, handle_motion_key},
+        search::{SearchState, VimSearchable, handle_search_input, handle_search_normal},
+    },
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -137,6 +141,61 @@ impl LibraryView {
         self.song_state.select(Some(0));
     }
 
+    fn queue_current(&self) -> Selection {
+        match self.focused_column {
+            LibraryColumn::Artists => {
+                let songs: Vec<Song> = self
+                    .all_songs
+                    .iter()
+                    .filter(|&s| {
+                        s.artist.as_deref().unwrap_or("")
+                            == self
+                                .artists
+                                .get(self.artist_cursor)
+                                .map(|s| s.as_str())
+                                .unwrap_or("")
+                    })
+                    .cloned()
+                    .collect();
+                Selection {
+                    songs_to_add: songs,
+                    ..Default::default()
+                }
+            }
+            LibraryColumn::Albums => {
+                let artist = self
+                    .artists
+                    .get(self.artist_cursor)
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
+                let album = self
+                    .albums
+                    .get(self.album_cursor)
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
+                let songs: Vec<Song> = self
+                    .all_songs
+                    .iter()
+                    .filter(|s| {
+                        s.artist.as_deref().unwrap_or("") == artist && song_tag(s, "Album") == album
+                    })
+                    .cloned()
+                    .collect();
+                Selection {
+                    songs_to_add: songs,
+                    ..Default::default()
+                }
+            }
+            LibraryColumn::Songs => {
+                let song = self.songs.get(self.song_cursor).cloned();
+                Selection {
+                    songs_to_add: song.into_iter().collect(),
+                    ..Default::default()
+                }
+            }
+        }
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> Selection {
         if self.search.active {
             let mut search = self.search.clone();
@@ -146,6 +205,9 @@ impl LibraryView {
         }
 
         match (key.modifiers, key.code) {
+            (KeyModifiers::NONE, KeyCode::Char(' ')) => {
+                return self.queue_current();
+            }
             (KeyModifiers::NONE, KeyCode::Char('h')) => {
                 self.focus_left();
                 return Selection::default();
@@ -511,4 +573,26 @@ fn song_tag_owned(song: &Song, key: &str) -> Option<String> {
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case(key))
         .map(|(_, v)| v.clone())
+}
+pub fn handle_key(app: &mut App<MpdClient>, key: KeyEvent) {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    if let (KeyModifiers::NONE, KeyCode::Char(':')) = (key.modifiers, key.code) {
+        app.command_bar.open();
+        return;
+    }
+
+    let selection = app.library.handle_key(key);
+    if let Some(msg) = selection.status {
+        app.status_bar.set_message(Ok(msg));
+    }
+
+    if !selection.songs_to_add.is_empty() {
+        if let (KeyModifiers::NONE, KeyCode::Char(' ')) = (key.modifiers, key.code) {
+            app.append(&selection.songs_to_add);
+            app.status_bar.set_message(Ok(format!("Added {} songs to playlist.", &selection.songs_to_add.len())));
+        } else {
+            app.append_and_play(&selection.songs_to_add);
+        }
+    }
 }

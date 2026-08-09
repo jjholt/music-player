@@ -1,4 +1,7 @@
+use crossterm::event::KeyEvent;
 use mpd::Song;
+
+use crate::{mpd::MpdClient, ui::App};
 
 fn song_tag<'a>(song: &'a Song, key: &str) -> &'a str {
     song.tags
@@ -13,24 +16,6 @@ pub fn format_album_suggestion(song: &Song) -> String {
     let album = song_tag(song, "Album");
     format!("{}: {}", artist, album)
 }
-
-/// A single registered command.
-pub struct Command {
-    pub name: &'static str,
-    pub description: &'static str,
-}
-
-/// All registered commands. Add new entries here to extend.
-pub const COMMANDS: &[Command] = &[
-    Command {
-        name: "a",
-        description: "Search albums: :a <query>",
-    },
-    Command {
-        name: "s",
-        description: "Search songs: :s <query>",
-    },
-];
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandMode {
@@ -234,5 +219,52 @@ impl CommandBar {
             Some(CommandMode::Song) => self.current_match().cloned().into_iter().collect(),
             None => vec![],
         }
+    }
+}
+pub fn handle_key(client: &mut App<MpdClient>, key: KeyEvent) {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    match (key.modifiers, key.code) {
+        (KeyModifiers::NONE, KeyCode::Esc) => {
+            client.command_bar.close();
+        }
+        (KeyModifiers::NONE, KeyCode::Enter) => {
+            let songs = client.command_bar.songs_to_add(&client.library.all_songs);
+            if songs.is_empty() {
+                client
+                    .status_bar
+                    .set_message(Err("Invalid song.".to_string()));
+            } else {
+                client.command_bar.commit_history();
+                client.command_bar.close();
+                client.append_and_play(&songs);
+            }
+        }
+        (KeyModifiers::NONE, KeyCode::Tab) => {
+            client.command_bar.next_match();
+        }
+        (KeyModifiers::SHIFT, KeyCode::BackTab) => {
+            client.command_bar.prev_match();
+        }
+        (KeyModifiers::NONE, KeyCode::Up) => {
+            client.command_bar.history_prev();
+            let all = client.library.all_songs.clone();
+            client.command_bar.update_matches(&all);
+        }
+        (KeyModifiers::NONE, KeyCode::Down) => {
+            client.command_bar.history_next();
+            let all = client.library.all_songs.clone();
+            client.command_bar.update_matches(&all);
+        }
+        (KeyModifiers::NONE, KeyCode::Backspace) => {
+            client.command_bar.pop();
+            let all = client.library.all_songs.clone();
+            client.command_bar.update_matches(&all);
+        }
+        (KeyModifiers::NONE, KeyCode::Char(c)) => {
+            client.command_bar.push(c);
+            let all = client.library.all_songs.clone();
+            client.command_bar.update_matches(&all);
+        }
+        _ => {}
     }
 }
