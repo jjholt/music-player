@@ -21,6 +21,11 @@ pub enum ActiveView {
     Library,
 }
 
+pub enum Mode {
+    Normal,
+    Input,
+}
+
 pub trait Connection {}
 impl Connection for MpdClient {}
 pub struct NoConnection;
@@ -36,6 +41,21 @@ pub struct App<Mpd: Connection> {
     pub command_bar: CommandBar,
     pub db_updating: bool,
     current_song_id: Option<u32>,
+    pub mode: Mode,
+}
+
+impl<T: Connection> App<T> {
+    pub fn update_mode(&mut self) {
+        self.mode = if self.command_bar.active
+            || self.playlist.insert_state.is_some()
+            || self.library.search.active
+            || self.playlist.search.active
+        {
+            Mode::Input
+        } else {
+            Mode::Normal
+        }
+    }
 }
 
 impl App<NoConnection> {
@@ -50,6 +70,7 @@ impl App<NoConnection> {
             command_bar: CommandBar::new(),
             db_updating: false,
             current_song_id: None,
+            mode: Mode::Normal,
         }
     }
     pub fn connect(self) -> anyhow::Result<App<MpdClient>> {
@@ -64,6 +85,7 @@ impl App<NoConnection> {
             command_bar: self.command_bar,
             db_updating: self.db_updating,
             current_song_id: self.current_song_id,
+            mode: self.mode,
         })
     }
 }
@@ -85,7 +107,9 @@ impl App<MpdClient> {
     pub fn load_library(&mut self) {
         match self.mpd.all_songs() {
             Ok(songs) => self.library.load_all_songs(songs),
-            Err(e) => self.status_bar.set_message(Some(format!("Library load error: {}", e))),
+            Err(e) => self
+                .status_bar
+                .set_message(Some(format!("Library load error: {}", e))),
         }
     }
 
@@ -296,6 +320,7 @@ impl App<MpdClient> {
                 }
             }
         }
+        self.update_mode();
     }
 
     pub fn draw(&mut self, f: &mut Frame) {
