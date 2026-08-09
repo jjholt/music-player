@@ -1,4 +1,5 @@
 pub mod autocomplete;
+pub mod browse;
 pub mod command;
 pub mod library;
 pub mod playlist;
@@ -10,6 +11,7 @@ use std::time::Duration;
 
 use crate::config::Config;
 use crate::mpd::MpdClient;
+use crate::ui::browse::BrowseView;
 use crate::ui::command::CommandBar;
 use crate::ui::library::LibraryView;
 use crate::ui::playlist::{PlaylistKeyResult, PlaylistView};
@@ -19,6 +21,7 @@ use crate::ui::statusbar::StatusBar;
 pub enum ActiveView {
     Playlist,
     Library,
+    Browse,
 }
 
 pub enum Mode {
@@ -37,6 +40,7 @@ pub struct App<Mpd: Connection> {
     pub active_view: ActiveView,
     pub playlist: PlaylistView,
     pub library: LibraryView,
+    pub browse: BrowseView,
     pub status_bar: StatusBar,
     pub command_bar: CommandBar,
     pub db_updating: bool,
@@ -50,6 +54,8 @@ impl<T: Connection> App<T> {
             || self.playlist.insert_state.is_some()
             || self.library.search.active
             || self.playlist.search.active
+            || self.browse.is_editing()
+            || self.browse.search.active
         {
             Mode::Input
         } else {
@@ -66,6 +72,7 @@ impl App<NoConnection> {
             active_view: ActiveView::Playlist,
             playlist: PlaylistView::new(),
             library: LibraryView::new(),
+            browse: BrowseView::new(),
             status_bar: StatusBar::new(),
             command_bar: CommandBar::new(),
             db_updating: false,
@@ -81,6 +88,7 @@ impl App<NoConnection> {
             active_view: self.active_view,
             playlist: self.playlist,
             library: self.library,
+            browse: self.browse,
             status_bar: self.status_bar,
             command_bar: self.command_bar,
             db_updating: self.db_updating,
@@ -319,6 +327,13 @@ impl App<MpdClient> {
                     self.append_and_play(selection.songs_to_add);
                 }
             }
+            ActiveView::Browse => {
+                let all_songs = self.library.all_songs.clone();
+                match self.browse.handle_key(key, &all_songs) {
+                    browse::BrowseResult::None => {},
+                    browse::BrowseResult::AppendAndPlay(songs) => self.append_and_play(songs),
+                }
+            }
         }
         self.update_mode();
     }
@@ -337,6 +352,7 @@ impl App<MpdClient> {
         match self.active_view {
             ActiveView::Playlist => self.playlist.draw(f, chunks[0]),
             ActiveView::Library => self.library.draw(f, chunks[0]),
+            ActiveView::Browse => self.browse.draw(f, chunks[0]),
         }
 
         let search_state = match self.active_view {
@@ -344,6 +360,7 @@ impl App<MpdClient> {
                 Some((&self.playlist.search, self.playlist.search_matches.len()))
             }
             ActiveView::Library => Some((&self.library.search, self.library.search_matches.len())),
+            ActiveView::Browse => Some((&self.browse.search, self.browse.search_matches.len())),
         };
 
         self.status_bar.draw(

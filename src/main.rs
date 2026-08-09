@@ -90,6 +90,9 @@ fn handle_global_key(app: &mut App<MpdClient>, key: crossterm::event::KeyEvent) 
             (KeyModifiers::NONE, KeyCode::Char('1')) => {
                 app.set_view(ActiveView::Playlist);
             }
+            (KeyModifiers::NONE, KeyCode::Char('3')) => {
+                app.set_view(ActiveView::Browse);
+            }
             (KeyModifiers::NONE, KeyCode::Char('4')) => {
                 app.set_view(ActiveView::Library);
             }
