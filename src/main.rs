@@ -77,7 +77,7 @@ fn handle_global_key(app: &mut App<MpdClient>, key: crossterm::event::KeyEvent) 
         }
         Mode::Normal => match (key.modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::Char('q')) => return true,
-            (KeyModifiers::CONTROL, KeyCode::Enter) => {
+            (KeyModifiers::NONE, KeyCode::Char('u')) => {
                 app.trigger_database_update();
             }
             (KeyModifiers::NONE, KeyCode::Char('p')) => {
