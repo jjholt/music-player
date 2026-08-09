@@ -15,6 +15,7 @@ visualizer_type = "spectrum"
 visualizer_look = "+|"
 ```
 
+
 ## Commands
 Press `:` to open the command bar.
 - `:a album-name` will start autocomplete for albums
@@ -23,8 +24,11 @@ Press `:` to open the command bar.
 ## Keybinds
 - `j` and `k` move up and down.
 - `h` and `l` move a level deeper (artist <=> album <=> songs)
+- `/` start search. `n`/`N` to go next/prev.
 - `<C-u>` and `<C-d>` go up and down 10 lines at once.
-
+- `1` Playlist view
+- `3` Search
+- `4` Library
 
 Search using `/`
 <img width="1280" height="705" alt="image" src="https://github.com/user-attachments/assets/538fdb80-5a82-40b1-8932-5b69a7f0622c" />
