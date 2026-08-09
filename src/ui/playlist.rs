@@ -10,13 +10,13 @@ use ratatui::{
     },
 };
 
-use crate::{mpd::MpdClient, ui::App};
 use crate::ui::autocomplete::Autocomplete;
 use crate::vim::{
     edit::{EditAction, EditState, VimEditable, handle_edit_key},
     motion::{MotionAction, MotionState, VimNavigable, handle_motion_key},
     search::{SearchState, VimSearchable, handle_search_input, handle_search_normal},
 };
+use crate::{mpd::MpdClient, ui::App};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum InsertPosition {
@@ -35,6 +35,7 @@ pub enum PlaylistKeyResult {
     None,
     Status(String),
     AppendAndPlay(Vec<Song>),
+    Append(Vec<Song>),
 }
 
 pub struct PlaylistView {
@@ -73,7 +74,7 @@ impl PlaylistView {
         self.table_state.select(Some(self.cursor));
     }
 
-    pub fn handle_key(
+    pub fn actions(
         &mut self,
         key: KeyEvent,
         mpd: &mut MpdClient,
@@ -450,14 +451,17 @@ pub fn handle_key(app: &mut App<MpdClient>, key: KeyEvent) {
     }
 
     let all_songs = app.library.all_songs.clone();
-    let result = app.playlist.handle_key(key, &mut app.mpd, &all_songs);
+    let result = app.playlist.actions(key, &mut app.mpd, &all_songs);
     match result {
         PlaylistKeyResult::Status(msg) => {
-            app.status_bar.set_message(Some(msg));
-        },
+            app.status_bar.set_message(Ok(msg));
+        }
+        PlaylistKeyResult::Append(songs) => {
+            app.append(&songs);
+        }
         PlaylistKeyResult::AppendAndPlay(songs) => {
-            app.append_and_play(songs);
-        },
+            app.append_and_play(&songs);
+        }
         PlaylistKeyResult::None => {}
     }
 }

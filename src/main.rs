@@ -26,7 +26,7 @@ fn main() -> anyhow::Result<()> {
         .connect()
         .map_err(|e| anyhow::anyhow!("Failed to connect to MPD: {}", e))?;
 
-    app.load_library();
+    app.load_library().load_playlist();
 
     let (tx, rx) = mpsc::channel::<AppEvent>();
     let tick_tx = tx.clone();
@@ -51,7 +51,9 @@ fn main() -> anyhow::Result<()> {
     });
 
     loop {
-        terminal.draw(|f| {app.draw(f);} )?;
+        terminal.draw(|f| {
+            app.draw(f);
+        })?;
         match rx.recv()? {
             AppEvent::Tick => {
                 app.tick();

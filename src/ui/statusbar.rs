@@ -1,21 +1,21 @@
-use std::time::Duration;
 use mpd::Song;
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
-    Frame,
 };
+use std::time::Duration;
 
-use crate::vim::search::SearchState;
 use crate::ui::command::CommandBar;
+use crate::vim::search::SearchState;
 
 pub struct StatusBar {
     pub now_playing: Option<Song>,
     pub elapsed: Option<Duration>,
     pub total: Option<Duration>,
-    message: Option<String>,
+    message: Result<String, String>,
 }
 
 impl StatusBar {
@@ -24,17 +24,16 @@ impl StatusBar {
             now_playing: None,
             elapsed: None,
             total: None,
-            message: None,
+            message: Ok(String::new()),
         }
     }
 
     pub fn set_now_playing(&mut self, song: Option<Song>, elapsed: Option<Duration>) {
         self.now_playing = song;
         self.elapsed = elapsed;
-        self.message = None;
     }
 
-    pub fn set_message(&mut self, msg: Option<String>) {
+    pub fn set_message(&mut self, msg: Result<String, String>) {
         self.message = msg;
     }
 
@@ -113,7 +112,10 @@ impl StatusBar {
             if let Some(ghost) = cmd.ghost_text() {
                 // strip the part already typed from the ghost
                 let typed_query = cmd.input.splitn(2, ' ').nth(1).unwrap_or("");
-                let ghost_remainder = if ghost.to_lowercase().starts_with(&typed_query.to_lowercase()) {
+                let ghost_remainder = if ghost
+                    .to_lowercase()
+                    .starts_with(&typed_query.to_lowercase())
+                {
                     &ghost[typed_query.len()..]
                 } else {
                     &ghost
@@ -150,12 +152,17 @@ impl StatusBar {
     }
 
     fn normal_content(&self) -> (String, Style) {
-        if let Some(ref msg) = self.message {
-            (msg.clone(), Style::default().fg(Color::Red))
-        } else if let Some(ref song) = self.now_playing {
+        match &self.message {
+            Ok(msg) => (msg.clone(), Style::default().fg(Color::White)),
+            Err(msg) => (msg.clone(), Style::default().fg(Color::Red)),
+        };
+        if let Some(song) = &self.now_playing {
             (format_now_playing(song), Style::default().fg(Color::Cyan))
         } else {
-            ("No track playing.".to_string(), Style::default().fg(Color::DarkGray))
+            (
+                "No track playing.".to_string(),
+                Style::default().fg(Color::DarkGray),
+            )
         }
     }
 }

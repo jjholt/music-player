@@ -548,10 +548,10 @@ pub fn handle_key(app: &mut App<MpdClient>, key: KeyEvent) {
     let all_songs = app.library.all_songs.clone();
     match app.browse.handle_key(key, &all_songs) {
         BrowseResult::Append(songs) => {
-            app.append(songs);
+            app.append(&songs);
         },
         BrowseResult::AppendAndPlay(songs) => {
-            app.append_and_play(songs);
+            app.append_and_play(&songs);
         },
         BrowseResult::None => {}
     }

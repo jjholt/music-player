@@ -17,24 +17,6 @@ pub fn format_album_suggestion(song: &Song) -> String {
     format!("{}: {}", artist, album)
 }
 
-/// A single registered command.
-pub struct Command {
-    pub name: &'static str,
-    pub description: &'static str,
-}
-
-/// All registered commands. Add new entries here to extend.
-pub const COMMANDS: &[Command] = &[
-    Command {
-        name: "a",
-        description: "Search albums: :a <query>",
-    },
-    Command {
-        name: "s",
-        description: "Search songs: :s <query>",
-    },
-];
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandMode {
     Album,
@@ -248,11 +230,13 @@ pub fn handle_key(client: &mut App<MpdClient>, key: KeyEvent) {
         (KeyModifiers::NONE, KeyCode::Enter) => {
             let songs = client.command_bar.songs_to_add(&client.library.all_songs);
             if songs.is_empty() {
-                client.status_bar.set_message(Some("Invalid song.".into()));
+                client
+                    .status_bar
+                    .set_message(Err("Invalid song.".to_string()));
             } else {
                 client.command_bar.commit_history();
                 client.command_bar.close();
-                client.append_and_play(songs);
+                client.append_and_play(&songs);
             }
         }
         (KeyModifiers::NONE, KeyCode::Tab) => {

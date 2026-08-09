@@ -97,11 +97,11 @@ impl App<MpdClient> {
             Ok(_) => {
                 self.db_updating = true;
                 self.status_bar
-                    .set_message(Some("Updating database...".into()));
+                    .set_message(Ok("Updating database...".into()));
             }
             Err(e) => self
                 .status_bar
-                .set_message(Some(format!("Update error: {}", e))),
+                .set_message(Err(format!("Update error: {}", e))),
         }
         self
     }
@@ -111,11 +111,12 @@ impl App<MpdClient> {
             Ok(songs) => self.library.load_all_songs(songs),
             Err(e) => self
                 .status_bar
-                .set_message(Some(format!("Library load error: {}", e))),
+                .set_message(Err(format!("Library load error: {}", e))),
         }
         self
     }
 
+    /// Update the current elapsed time for currently playing song
     pub fn tick(&mut self) -> &mut Self {
         let client = &mut self.mpd;
         match client.status() {
@@ -125,12 +126,11 @@ impl App<MpdClient> {
                     match client.all_songs() {
                         Ok(songs) => {
                             self.library.load_all_songs(songs);
-                            self.status_bar
-                                .set_message(Some("Database updated.".into()));
+                            self.status_bar.set_message(Ok("Database updated.".into()));
                         }
                         Err(e) => self
                             .status_bar
-                            .set_message(Some(format!("Reload error: {}", e))),
+                            .set_message(Ok(format!("Reload error: {}", e))),
                     }
                 }
                 self.status_bar.elapsed = status.elapsed;
@@ -140,28 +140,28 @@ impl App<MpdClient> {
                     self.current_song_id = new_id;
                     match client.current_song() {
                         Ok(song) => self.status_bar.set_now_playing(song, status.elapsed),
-                        Err(e) => self.status_bar.set_message(Some(format!("Error: {}", e))),
+                        Err(e) => self.status_bar.set_message(Ok(format!("Error: {}", e))),
                     }
                 }
             }
             Err(e) => self
                 .status_bar
-                .set_message(Some(format!("Status error: {}", e))),
+                .set_message(Err(format!("Status error: {}", e))),
         }
         self
     }
 
+    /// Change the currently displayed view (`ActiveView`)
     pub fn set_view(&mut self, view: ActiveView) -> &mut Self {
         self.active_view = view;
-        self.refresh_playlist();
+        self.load_playlist();
         self
     }
 
-    fn refresh_playlist(&mut self) -> &mut Self {
-        let client = &mut self.mpd;
-        match client.queue() {
+    pub fn load_playlist(&mut self) -> &mut Self {
+        match self.mpd.queue() {
             Ok(songs) => self.playlist.set_tracks(songs),
-            Err(e) => self.status_bar.set_message(Some(format!("Error: {}", e))),
+            Err(e) => self.status_bar.set_message(Err(format!("Error: {}", e))),
         }
         self
     }
@@ -173,9 +173,19 @@ impl App<MpdClient> {
         let new_pos = (elapsed + Duration::from_secs(10)).min(total);
         if let Err(e) = client.seek(new_pos) {
             self.status_bar
-                .set_message(Some(format!("Seek error: {}", e)));
+                .set_message(Err(format!("Seek error: {}", e)));
         } else {
             self.status_bar.elapsed = Some(new_pos);
+        }
+        self
+    }
+
+    fn mpd_action<F>(&mut self, action: F) -> &mut Self
+    where
+        F: FnOnce(&mut MpdClient) -> anyhow::Result<()>,
+    {
+        if let Err(e) = action(&mut self.mpd) {
+            self.status_bar.set_message(Err(format!("Error: {}", e)));
         }
         self
     }
@@ -186,7 +196,7 @@ impl App<MpdClient> {
         let new_pos = elapsed.saturating_sub(Duration::from_secs(10));
         if let Err(e) = client.seek(new_pos) {
             self.status_bar
-                .set_message(Some(format!("Seek error: {}", e)));
+                .set_message(Err(format!("Seek error: {}", e)));
         } else {
             self.status_bar.elapsed = Some(new_pos);
         }
@@ -194,49 +204,33 @@ impl App<MpdClient> {
     }
 
     pub fn toggle_pause(&mut self) -> &mut Self {
-        let client = &mut self.mpd;
-        if let Err(e) = client.toggle_pause() {
-            self.status_bar.set_message(Some(format!("Error: {}", e)));
-        }
-        self
+        self.mpd_action(|client| client.toggle_pause())
     }
 
     pub fn next(&mut self) -> &mut Self {
-        let client = &mut self.mpd;
-        if let Err(e) = client.next() {
-            self.status_bar.set_message(Some(format!("Error: {}", e)));
-        }
-        self
+        self.mpd_action(|client| client.next())
     }
 
     pub fn prev(&mut self) -> &mut Self {
-        let client = &mut self.mpd;
-        if let Err(e) = client.prev() {
-            self.status_bar.set_message(Some(format!("Error: {}", e)));
-        }
-        self
+        self.mpd_action(|client| client.prev())
     }
 
-    pub fn append(&mut self, songs: Vec<mpd::Song>) -> &mut Self {
-        let client = &mut self.mpd;
+    pub fn append(&mut self, songs: &[mpd::Song]) -> &mut Self {
         for song in songs {
-            if let Err(e) = client.append_song(&song) {
-                self.status_bar.set_message(Some(format!("Error: {}", e)));
-            }
+            self.mpd_action(|client| client.append_song(song));
         }
-        self.refresh_playlist();
+        self.load_playlist();
         self
     }
 
-    pub fn append_and_play(&mut self, songs: Vec<mpd::Song>) -> &mut Self {
+    pub fn append_and_play(&mut self, songs: &[mpd::Song]) -> &mut Self {
         if songs.is_empty() {
             return self;
         }
         let _ = self
             .mpd
             .queue_len()
-            .map(|pos| self.append(songs).mpd.play_at(pos))
-            .map_err(|e| self.status_bar.set_message(Some(format!("Error: {}", e))));
+            .map(|pos| self.append(songs).mpd.play_at(pos));
         self
     }
 
