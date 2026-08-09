@@ -1,6 +1,8 @@
 pub mod library;
 pub mod playlist;
 pub mod statusbar;
+pub mod autocomplete;
+pub mod command;
 
 use crossterm::event::KeyEvent;
 use ratatui::Frame;
@@ -9,8 +11,9 @@ use std::time::Duration;
 use crate::config::Config;
 use crate::mpd::MpdClient;
 use crate::ui::library::LibraryView;
-use crate::ui::playlist::PlaylistView;
+use crate::ui::playlist::{PlaylistView, PlaylistKeyResult};
 use crate::ui::statusbar::StatusBar;
+use crate::ui::command::CommandBar;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ActiveView {
@@ -25,6 +28,7 @@ pub struct App {
     pub playlist: PlaylistView,
     pub library: LibraryView,
     pub status_bar: StatusBar,
+    pub command_bar: CommandBar,
     pub db_updating: bool,
     current_song_id: Option<u32>,
 }
@@ -38,6 +42,7 @@ impl App {
             playlist: PlaylistView::new(),
             library: LibraryView::new(),
             status_bar: StatusBar::new(),
+            command_bar: CommandBar::new(),
             db_updating: false,
             current_song_id: None,
         }
@@ -48,41 +53,14 @@ impl App {
             Ok(mut client) => {
                 match client.all_songs() {
                     Ok(songs) => self.library.load_all_songs(songs),
-                    Err(e) => self
-                        .status_bar
-                        .set_message(Some(format!("Library load error: {}", e))),
+                    Err(e) => self.status_bar.set_message(Some(format!("Library load error: {}", e))),
                 }
                 self.mpd = Some(client);
                 self.refresh_current_song();
                 self.refresh_playlist();
             }
             Err(e) => {
-                self.status_bar
-                    .set_message(Some(format!("MPD connection error: {}", e)));
-            }
-        }
-    }
-
-    pub fn toggle_pause(&mut self) {
-        if let Some(ref mut client) = self.mpd {
-            if let Err(e) = client.toggle_pause() {
-                self.status_bar.set_message(Some(format!("Error: {}", e)));
-            }
-        }
-    }
-
-    pub fn next(&mut self) {
-        if let Some(ref mut client) = self.mpd {
-            if let Err(e) = client.next() {
-                self.status_bar.set_message(Some(format!("Error: {}", e)));
-            }
-        }
-    }
-
-    pub fn prev(&mut self) {
-        if let Some(ref mut client) = self.mpd {
-            if let Err(e) = client.prev() {
-                self.status_bar.set_message(Some(format!("Error: {}", e)));
+                self.status_bar.set_message(Some(format!("MPD connection error: {}", e)));
             }
         }
     }
@@ -92,16 +70,12 @@ impl App {
             match client.update_database() {
                 Ok(_) => {
                     self.db_updating = true;
-                    self.status_bar
-                        .set_message(Some("Updating database...".into()));
+                    self.status_bar.set_message(Some("Updating database...".into()));
                 }
-                Err(e) => self
-                    .status_bar
-                    .set_message(Some(format!("Update error: {}", e))),
+                Err(e) => self.status_bar.set_message(Some(format!("Update error: {}", e))),
             }
         } else {
-            self.status_bar
-                .set_message(Some("Not connected to MPD.".into()));
+            self.status_bar.set_message(Some("Not connected to MPD.".into()));
         }
     }
 
@@ -114,18 +88,13 @@ impl App {
                         match client.all_songs() {
                             Ok(songs) => {
                                 self.library.load_all_songs(songs);
-                                self.status_bar
-                                    .set_message(Some("Database updated.".into()));
+                                self.status_bar.set_message(Some("Database updated.".into()));
                             }
-                            Err(e) => self
-                                .status_bar
-                                .set_message(Some(format!("Reload error: {}", e))),
+                            Err(e) => self.status_bar.set_message(Some(format!("Reload error: {}", e))),
                         }
                     }
-
                     self.status_bar.elapsed = status.elapsed;
                     self.status_bar.total = status.duration;
-
                     let new_id = status.song.map(|p| p.id.0);
                     if new_id != self.current_song_id {
                         self.current_song_id = new_id;
@@ -135,9 +104,7 @@ impl App {
                         }
                     }
                 }
-                Err(e) => self
-                    .status_bar
-                    .set_message(Some(format!("Status error: {}", e))),
+                Err(e) => self.status_bar.set_message(Some(format!("Status error: {}", e))),
             }
         }
     }
@@ -179,8 +146,9 @@ impl App {
             let total = self.status_bar.total.unwrap_or(Duration::ZERO);
             let new_pos = (elapsed + Duration::from_secs(10)).min(total);
             if let Err(e) = client.seek(new_pos) {
-                self.status_bar
-                    .set_message(Some(format!("Seek error: {}", e)));
+                self.status_bar.set_message(Some(format!("Seek error: {}", e)));
+            } else {
+                self.status_bar.elapsed = Some(new_pos);
             }
         }
     }
@@ -190,18 +158,124 @@ impl App {
             let elapsed = self.status_bar.elapsed.unwrap_or(Duration::ZERO);
             let new_pos = elapsed.saturating_sub(Duration::from_secs(10));
             if let Err(e) = client.seek(new_pos) {
-                self.status_bar
-                    .set_message(Some(format!("Seek error: {}", e)));
+                self.status_bar.set_message(Some(format!("Seek error: {}", e)));
+            } else {
+                self.status_bar.elapsed = Some(new_pos);
+            }
+        }
+    }
+
+    pub fn toggle_pause(&mut self) {
+        if let Some(ref mut client) = self.mpd {
+            if let Err(e) = client.toggle_pause() {
+                self.status_bar.set_message(Some(format!("Error: {}", e)));
+            }
+        }
+    }
+
+    pub fn next(&mut self) {
+        if let Some(ref mut client) = self.mpd {
+            if let Err(e) = client.next() {
+                self.status_bar.set_message(Some(format!("Error: {}", e)));
+            }
+        }
+    }
+
+    pub fn prev(&mut self) {
+        if let Some(ref mut client) = self.mpd {
+            if let Err(e) = client.prev() {
+                self.status_bar.set_message(Some(format!("Error: {}", e)));
+            }
+        }
+    }
+
+    fn append_and_play(&mut self, songs: Vec<mpd::Song>) {
+        if songs.is_empty() {
+            return;
+        }
+        if let Some(ref mut client) = self.mpd {
+            match client.queue_len() {
+                Ok(pos) => {
+                    for song in &songs {
+                        if let Err(e) = client.append_song(song) {
+                            self.status_bar.set_message(Some(format!("Error: {}", e)));
+                            return;
+                        }
+                    }
+                    if let Err(e) = client.play_at(pos) {
+                        self.status_bar.set_message(Some(format!("Error: {}", e)));
+                    }
+                    self.refresh_playlist();
+                }
+                Err(e) => self.status_bar.set_message(Some(format!("Error: {}", e))),
             }
         }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
+        use crossterm::event::{KeyCode, KeyModifiers};
+
+        // command bar takes priority
+        if self.command_bar.active {
+            match (key.modifiers, key.code) {
+                (KeyModifiers::NONE, KeyCode::Esc) => {
+                    self.command_bar.close();
+                }
+                (KeyModifiers::NONE, KeyCode::Enter) => {
+                    let songs = self.command_bar.songs_to_add(&self.library.all_songs);
+                    if songs.is_empty() {
+                        self.status_bar.set_message(Some("Invalid song.".into()));
+                    } else {
+                        self.command_bar.commit_history();
+                        self.command_bar.close();
+                        self.append_and_play(songs);
+                    }
+                }
+                (KeyModifiers::NONE, KeyCode::Tab) => {
+                    self.command_bar.next_match();
+                }
+                (KeyModifiers::SHIFT, KeyCode::BackTab) => {
+                    self.command_bar.prev_match();
+                }
+                (KeyModifiers::NONE, KeyCode::Up) => {
+                    self.command_bar.history_prev();
+                    let all = self.library.all_songs.clone();
+                    self.command_bar.update_matches(&all);
+                }
+                (KeyModifiers::NONE, KeyCode::Down) => {
+                    self.command_bar.history_next();
+                    let all = self.library.all_songs.clone();
+                    self.command_bar.update_matches(&all);
+                }
+                (KeyModifiers::NONE, KeyCode::Backspace) => {
+                    self.command_bar.pop();
+                    let all = self.library.all_songs.clone();
+                    self.command_bar.update_matches(&all);
+                }
+                (KeyModifiers::NONE, KeyCode::Char(c)) => {
+                    self.command_bar.push(c);
+                    let all = self.library.all_songs.clone();
+                    self.command_bar.update_matches(&all);
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        // open command bar
+        if let (KeyModifiers::NONE, KeyCode::Char(':')) = (key.modifiers, key.code) {
+            self.command_bar.open();
+            return;
+        }
+
         match self.active_view {
             ActiveView::Playlist => {
-                let status = self.playlist.handle_key(key, self.mpd.as_mut());
-                if let Some(msg) = status {
-                    self.status_bar.set_message(Some(msg));
+                let all_songs = self.library.all_songs.clone();
+                let result = self.playlist.handle_key(key, self.mpd.as_mut(), &all_songs);
+                match result {
+                    PlaylistKeyResult::Status(msg) => self.status_bar.set_message(Some(msg)),
+                    PlaylistKeyResult::AppendAndPlay(songs) => self.append_and_play(songs),
+                    PlaylistKeyResult::None => {}
                 }
             }
             ActiveView::Library => {
@@ -210,23 +284,7 @@ impl App {
                     self.status_bar.set_message(Some(msg));
                 }
                 if !selection.songs_to_add.is_empty() {
-                    if let Some(ref mut client) = self.mpd {
-                        match client.queue_len() {
-                            Ok(pos) => {
-                                for song in &selection.songs_to_add {
-                                    if let Err(e) = client.append_song(song) {
-                                        self.status_bar.set_message(Some(format!("Error: {}", e)));
-                                        break;
-                                    }
-                                }
-                                if let Err(e) = client.play_at(pos) {
-                                    self.status_bar.set_message(Some(format!("Error: {}", e)));
-                                }
-                                self.refresh_playlist();
-                            }
-                            Err(e) => self.status_bar.set_message(Some(format!("Error: {}", e))),
-                        }
-                    }
+                    self.append_and_play(selection.songs_to_add);
                 }
             }
         }
@@ -249,12 +307,15 @@ impl App {
         }
 
         let search_state = match self.active_view {
-            ActiveView::Playlist => {
-                Some((&self.playlist.search, self.playlist.search_matches.len()))
-            }
+            ActiveView::Playlist => Some((&self.playlist.search, self.playlist.search_matches.len())),
             ActiveView::Library => Some((&self.library.search, self.library.search_matches.len())),
         };
 
-        self.status_bar.draw(f, chunks[1], search_state);
+        self.status_bar.draw(f, chunks[1], search_state, if self.command_bar.active { Some(&self.command_bar) } else { None });
     }
+}
+
+fn format_duration(d: Duration) -> String {
+    let secs = d.as_secs();
+    format!("{}:{:02}", secs / 60, secs % 60)
 }

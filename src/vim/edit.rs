@@ -34,8 +34,6 @@ impl EditState {
     }
 }
 
-/// Returns `Some(EditAction)` if an action was completed, `None` if the key was not consumed.
-/// Note: a pending `d` press returns `None` until `dd` is completed.
 pub fn handle_edit_key<T: VimEditable>(
     target: &mut T,
     state: &mut EditState,
