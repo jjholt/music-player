@@ -1,16 +1,19 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use mpd::Song;
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
-    Frame,
 };
 
-use crate::vim::{
-    motion::{handle_motion_key, MotionAction, MotionState, VimNavigable},
-    search::{handle_search_input, handle_search_normal, SearchState, VimSearchable},
+use crate::{
+    mpd::MpdClient,
+    ui::App,
+    vim::{
+        motion::{MotionAction, MotionState, VimNavigable, handle_motion_key},
+        search::{SearchState, VimSearchable, handle_search_input, handle_search_normal},
+    },
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -159,31 +162,38 @@ impl BrowseView {
             let v = value.to_lowercase();
             let matches = match field {
                 BrowseField::Any => {
-                    song.title.as_deref().unwrap_or("").to_lowercase().contains(&v)
-                        || song.artist.as_deref().unwrap_or("").to_lowercase().contains(&v)
+                    song.title
+                        .as_deref()
+                        .unwrap_or("")
+                        .to_lowercase()
+                        .contains(&v)
+                        || song
+                            .artist
+                            .as_deref()
+                            .unwrap_or("")
+                            .to_lowercase()
+                            .contains(&v)
                         || song_tag(song, "Album").to_lowercase().contains(&v)
                         || song_tag(song, "Genre").to_lowercase().contains(&v)
                         || song.file.to_lowercase().contains(&v)
                         || song_tag(song, "Date").to_lowercase().contains(&v)
                 }
-                BrowseField::Artist => {
-                    song.artist.as_deref().unwrap_or("").to_lowercase().contains(&v)
-                }
-                BrowseField::Album => {
-                    song_tag(song, "Album").to_lowercase().contains(&v)
-                }
-                BrowseField::Song => {
-                    song.title.as_deref().unwrap_or("").to_lowercase().contains(&v)
-                }
-                BrowseField::Genre => {
-                    song_tag(song, "Genre").to_lowercase().contains(&v)
-                }
-                BrowseField::Filename => {
-                    song.file.to_lowercase().contains(&v)
-                }
-                BrowseField::Date => {
-                    song_tag(song, "Date").to_lowercase().contains(&v)
-                }
+                BrowseField::Artist => song
+                    .artist
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains(&v),
+                BrowseField::Album => song_tag(song, "Album").to_lowercase().contains(&v),
+                BrowseField::Song => song
+                    .title
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains(&v),
+                BrowseField::Genre => song_tag(song, "Genre").to_lowercase().contains(&v),
+                BrowseField::Filename => song.file.to_lowercase().contains(&v),
+                BrowseField::Date => song_tag(song, "Date").to_lowercase().contains(&v),
             };
             if !matches {
                 return false;
@@ -252,9 +262,10 @@ impl BrowseView {
             if let Some(action) = handle_motion_key(self, &mut motion, key) {
                 self.motion = motion;
                 if action == MotionAction::Select {
-                    let song = self.results.get(
-                        self.list_state.selected().unwrap_or(0)
-                    ).cloned();
+                    let song = self
+                        .results
+                        .get(self.list_state.selected().unwrap_or(0))
+                        .cloned();
                     if let Some(s) = song {
                         return BrowseResult::AppendAndPlay(vec![s]);
                     }
@@ -269,35 +280,33 @@ impl BrowseView {
             (KeyModifiers::SHIFT, KeyCode::BackTab) => self.focus_prev(),
             (KeyModifiers::NONE, KeyCode::Char('h')) => self.focus_prev(),
             (KeyModifiers::NONE, KeyCode::Char('l')) => self.focus_next(),
-            (KeyModifiers::NONE, KeyCode::Char('i'))
-            | (KeyModifiers::NONE, KeyCode::Char('a')) => {
+            (KeyModifiers::NONE, KeyCode::Char('i')) | (KeyModifiers::NONE, KeyCode::Char('a')) => {
                 if let BrowseFocus::Field(_) = self.focus {
                     self.edit_mode = BrowseEditMode::Editing;
                 }
             }
-            (KeyModifiers::NONE, KeyCode::Enter) => {
-                match self.focus {
-                    BrowseFocus::Search => {
-                        self.run_search(all_songs);
-                        self.focus = BrowseFocus::Results;
-                        self.list_state.select(Some(0));
-                    }
-                    BrowseFocus::Reset => {
-                        self.reset();
-                    }
-                    BrowseFocus::Results => {
-                        let song = self.results.get(
-                            self.list_state.selected().unwrap_or(0)
-                        ).cloned();
-                        if let Some(s) = song {
-                            return BrowseResult::AppendAndPlay(vec![s]);
-                        }
-                    }
-                    BrowseFocus::Field(i) => {
-                        self.edit_mode = BrowseEditMode::Editing;
+            (KeyModifiers::NONE, KeyCode::Enter) => match self.focus {
+                BrowseFocus::Search => {
+                    self.run_search(all_songs);
+                    self.focus = BrowseFocus::Results;
+                    self.list_state.select(Some(0));
+                }
+                BrowseFocus::Reset => {
+                    self.reset();
+                }
+                BrowseFocus::Results => {
+                    let song = self
+                        .results
+                        .get(self.list_state.selected().unwrap_or(0))
+                        .cloned();
+                    if let Some(s) = song {
+                        return BrowseResult::AppendAndPlay(vec![s]);
                     }
                 }
-            }
+                BrowseFocus::Field(_) => {
+                    self.edit_mode = BrowseEditMode::Editing;
+                }
+            },
             _ => {}
         }
 
@@ -318,9 +327,8 @@ impl BrowseView {
         let total_fields = self.fields.len();
         let button_count = 2usize; // Search, Reset
         let total = total_fields + button_count;
-        let width_per = area.width / total as u16;
 
-        let mut constraints: Vec<Constraint> = (0..total)
+        let constraints: Vec<Constraint> = (0..total)
             .map(|_| Constraint::Ratio(1, total as u32))
             .collect();
 
@@ -370,7 +378,9 @@ impl BrowseView {
         let search_btn = Paragraph::new("Search")
             .block(search_block)
             .style(if search_focused {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             });
@@ -388,7 +398,9 @@ impl BrowseView {
         let reset_btn = Paragraph::new("Reset")
             .block(reset_block)
             .style(if reset_focused {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             });
@@ -439,6 +451,7 @@ impl BrowseView {
 pub enum BrowseResult {
     None,
     AppendAndPlay(Vec<Song>),
+    Append(Vec<Song>),
 }
 
 impl VimNavigable for BrowseView {
@@ -476,7 +489,11 @@ impl VimSearchable for BrowseView {
             .enumerate()
             .filter(|(_, s)| {
                 s.title.as_deref().unwrap_or("").to_lowercase().contains(&q)
-                    || s.artist.as_deref().unwrap_or("").to_lowercase().contains(&q)
+                    || s.artist
+                        .as_deref()
+                        .unwrap_or("")
+                        .to_lowercase()
+                        .contains(&q)
             })
             .map(|(i, _)| i)
             .collect();
@@ -490,7 +507,8 @@ impl VimSearchable for BrowseView {
             return;
         }
         self.search_match_idx = (self.search_match_idx + 1) % self.search_matches.len();
-        self.list_state.select(Some(self.search_matches[self.search_match_idx]));
+        self.list_state
+            .select(Some(self.search_matches[self.search_match_idx]));
     }
     fn prev_match(&mut self) {
         if self.search_matches.is_empty() {
@@ -500,7 +518,8 @@ impl VimSearchable for BrowseView {
             .search_match_idx
             .checked_sub(1)
             .unwrap_or(self.search_matches.len() - 1);
-        self.list_state.select(Some(self.search_matches[self.search_match_idx]));
+        self.list_state
+            .select(Some(self.search_matches[self.search_match_idx]));
     }
     fn current_query(&self) -> &str {
         &self.search.query
@@ -516,4 +535,24 @@ fn song_tag<'a>(song: &'a Song, key: &str) -> &'a str {
         .find(|(k, _)| k.eq_ignore_ascii_case(key))
         .map(|(_, v)| v.as_str())
         .unwrap_or("")
+}
+
+pub fn handle_key(app: &mut App<MpdClient>, key: KeyEvent) {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    if let (KeyModifiers::NONE, KeyCode::Char(':')) = (key.modifiers, key.code) {
+        app.command_bar.open();
+        return;
+    }
+
+    let all_songs = app.library.all_songs.clone();
+    match app.browse.handle_key(key, &all_songs) {
+        BrowseResult::Append(songs) => {
+            app.append(songs);
+        },
+        BrowseResult::AppendAndPlay(songs) => {
+            app.append_and_play(songs);
+        },
+        BrowseResult::None => {}
+    }
 }

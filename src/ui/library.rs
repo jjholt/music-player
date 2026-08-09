@@ -7,10 +7,10 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState},
 };
 
-use crate::vim::{
+use crate::{mpd::MpdClient, ui::App, vim::{
     motion::{MotionAction, MotionState, VimNavigable, handle_motion_key},
     search::{SearchState, VimSearchable, handle_search_input, handle_search_normal},
-};
+}};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LibraryColumn {
@@ -511,4 +511,20 @@ fn song_tag_owned(song: &Song, key: &str) -> Option<String> {
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case(key))
         .map(|(_, v)| v.clone())
+}
+pub fn handle_key(app: &mut App<MpdClient>, key: KeyEvent) {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    if let (KeyModifiers::NONE, KeyCode::Char(':')) = (key.modifiers, key.code) {
+        app.command_bar.open();
+        return;
+    }
+
+    let selection = app.library.handle_key(key);
+    if let Some(msg) = selection.status {
+        app.status_bar.set_message(Some(msg));
+    }
+    if !selection.songs_to_add.is_empty() {
+        app.append_and_play(selection.songs_to_add);
+    }
 }

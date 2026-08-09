@@ -51,7 +51,7 @@ fn main() -> anyhow::Result<()> {
     });
 
     loop {
-        terminal.draw(|f| app.draw(f))?;
+        terminal.draw(|f| {app.draw(f);} )?;
         match rx.recv()? {
             AppEvent::Tick => {
                 app.tick();

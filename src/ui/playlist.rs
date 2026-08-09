@@ -10,7 +10,7 @@ use ratatui::{
     },
 };
 
-use crate::mpd::MpdClient;
+use crate::{mpd::MpdClient, ui::App};
 use crate::ui::autocomplete::Autocomplete;
 use crate::vim::{
     edit::{EditAction, EditState, VimEditable, handle_edit_key},
@@ -439,4 +439,25 @@ fn song_tag<'a>(song: &'a Song, key: &str) -> &'a str {
         .find(|(k, _)| k.eq_ignore_ascii_case(key))
         .map(|(_, v)| v.as_str())
         .unwrap_or("Unknown")
+}
+
+pub fn handle_key(app: &mut App<MpdClient>, key: KeyEvent) {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    if let (KeyModifiers::NONE, KeyCode::Char(':')) = (key.modifiers, key.code) {
+        app.command_bar.open();
+        return;
+    }
+
+    let all_songs = app.library.all_songs.clone();
+    let result = app.playlist.handle_key(key, &mut app.mpd, &all_songs);
+    match result {
+        PlaylistKeyResult::Status(msg) => {
+            app.status_bar.set_message(Some(msg));
+        },
+        PlaylistKeyResult::AppendAndPlay(songs) => {
+            app.append_and_play(songs);
+        },
+        PlaylistKeyResult::None => {}
+    }
 }
