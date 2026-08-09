@@ -1,18 +1,41 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use mpd::Song;
 use ratatui::{
-    layout::Rect,
-    style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Row, Table, TableState},
     Frame,
+    layout::{Constraint, Rect},
+    style::{Color, Modifier, Style},
+    widgets::{
+        Block, Borders, Clear, List, ListItem, Row, Scrollbar, ScrollbarOrientation,
+        ScrollbarState, Table, TableState,
+    },
 };
 
 use crate::mpd::MpdClient;
+use crate::ui::autocomplete::Autocomplete;
 use crate::vim::{
-    edit::{handle_edit_key, EditAction, EditState, VimEditable},
-    motion::{handle_motion_key, MotionAction, MotionState, VimNavigable},
-    search::{handle_search_input, handle_search_normal, SearchState, VimSearchable},
+    edit::{EditAction, EditState, VimEditable, handle_edit_key},
+    motion::{MotionAction, MotionState, VimNavigable, handle_motion_key},
+    search::{SearchState, VimSearchable, handle_search_input, handle_search_normal},
 };
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum InsertPosition {
+    Above,
+    Below,
+}
+
+#[derive(Debug, Clone)]
+pub struct InsertState {
+    pub position: InsertPosition,
+    pub input: String,
+    pub autocomplete: Autocomplete,
+}
+
+pub enum PlaylistKeyResult {
+    None,
+    Status(String),
+    AppendAndPlay(Vec<Song>),
+}
 
 pub struct PlaylistView {
     pub tracks: Vec<Song>,
@@ -22,6 +45,7 @@ pub struct PlaylistView {
     pub search: SearchState,
     pub search_matches: Vec<usize>,
     pub search_match_idx: usize,
+    pub insert_state: Option<InsertState>,
     table_state: TableState,
 }
 
@@ -35,6 +59,7 @@ impl PlaylistView {
             search: SearchState::new(),
             search_matches: vec![],
             search_match_idx: 0,
+            insert_state: None,
             table_state: TableState::default(),
         }
     }
@@ -51,81 +76,134 @@ impl PlaylistView {
     pub fn handle_key(
         &mut self,
         key: KeyEvent,
-        mpd: Option<&mut MpdClient>,
-    ) -> Option<String> {
+        mpd: &mut MpdClient,
+        all_songs: &[Song],
+    ) -> PlaylistKeyResult {
+        // insert mode
+        if let Some(ref mut insert) = self.insert_state {
+            match (key.modifiers, key.code) {
+                (KeyModifiers::NONE, KeyCode::Esc) => {
+                    self.insert_state = None;
+                    return PlaylistKeyResult::None;
+                }
+                (KeyModifiers::NONE, KeyCode::Enter) => {
+                    if insert.autocomplete.has_matches() {
+                        if let Some(song) = insert.autocomplete.current().cloned() {
+                            // let insert_pos = match insert.position {
+                            //     InsertPosition::Above => self.cursor,
+                            //     InsertPosition::Below => self.cursor + 1,
+                            // };
+                            self.insert_state = None;
+                            return PlaylistKeyResult::AppendAndPlay(vec![song]);
+                        }
+                    }
+                    return PlaylistKeyResult::Status("Invalid song.".into());
+                }
+                (KeyModifiers::NONE, KeyCode::Tab) => {
+                    insert.autocomplete.next();
+                    return PlaylistKeyResult::None;
+                }
+                (KeyModifiers::SHIFT, KeyCode::BackTab) => {
+                    insert.autocomplete.prev();
+                    return PlaylistKeyResult::None;
+                }
+                (KeyModifiers::NONE, KeyCode::Backspace) => {
+                    insert.input.pop();
+                    let q = insert.input.clone();
+                    insert.autocomplete.update(&q, all_songs);
+                    return PlaylistKeyResult::None;
+                }
+                (KeyModifiers::NONE, KeyCode::Char(c)) => {
+                    insert.input.push(c);
+                    let q = insert.input.clone();
+                    insert.autocomplete.update(&q, all_songs);
+                    return PlaylistKeyResult::None;
+                }
+                _ => return PlaylistKeyResult::None,
+            }
+        }
+
         if self.search.active {
             let mut search = self.search.clone();
             handle_search_input(self, &mut search, key);
             self.search = search;
-            return None;
+            return PlaylistKeyResult::None;
         }
 
-        // c — clear playlist
         if let (KeyModifiers::NONE, KeyCode::Char('c')) = (key.modifiers, key.code) {
             self.tracks.clear();
             self.cursor = 0;
             self.sync_cursor();
-            if let Some(client) = mpd {
-                if let Err(e) = client.clear_queue() {
-                    return Some(format!("Error: {}", e));
-                }
+            if let Err(e) = mpd.clear_queue() {
+                return PlaylistKeyResult::Status(format!("Error: {}", e));
             }
-            return None;
+            return PlaylistKeyResult::None;
         }
 
         let mut motion = self.motion.clone();
         if let Some(action) = handle_motion_key(self, &mut motion, key) {
             self.motion = motion;
             if action == MotionAction::Select {
-                if let Some(client) = mpd {
-                    if let Err(e) = client.play_at(self.cursor as u32) {
-                        return Some(format!("Error: {}", e));
-                    }
+                if let Err(e) = mpd.play_at(self.cursor as u32) {
+                    return PlaylistKeyResult::Status(format!("Error: {}", e));
                 }
             }
-            return None;
+            return PlaylistKeyResult::None;
         }
 
         let mut search = self.search.clone();
         if handle_search_normal(self, &mut search, key) {
             self.search = search;
-            return None;
+            return PlaylistKeyResult::None;
         }
 
         let mut edit = self.edit.clone();
         if let Some(action) = handle_edit_key(self, &mut edit, key) {
             self.edit = edit;
-            if let Some(client) = mpd {
-                let result = match action {
-                    EditAction::DeleteCurrent => client.delete_at(self.cursor as u32),
-                    EditAction::DeleteFromCursor => {
-                        let pos = self.cursor as u32;
-                        let count = self.tracks.len() as u32 + 1;
-                        let mut err = Ok(());
-                        for _ in pos..pos + count {
-                            if let Err(e) = client.delete_at(pos) {
-                                err = Err(e);
-                                break;
-                            }
-                        }
-                        err
-                    }
-                    EditAction::MoveUp => {
-                        client.swap_tracks(self.cursor as u32, self.cursor as u32 + 1)
-                    }
-                    EditAction::MoveDown => {
-                        client.swap_tracks(self.cursor as u32, self.cursor as u32 - 1)
-                    }
-                    EditAction::InsertAbove | EditAction::InsertBelow => Ok(()),
-                };
-                if let Err(e) = result {
-                    return Some(format!("Error: {}", e));
+            match action {
+                EditAction::InsertAbove => {
+                    self.insert_state = Some(InsertState {
+                        position: InsertPosition::Above,
+                        input: String::new(),
+                        autocomplete: Autocomplete::new(),
+                    });
+                    return PlaylistKeyResult::None;
                 }
+                EditAction::InsertBelow => {
+                    self.insert_state = Some(InsertState {
+                        position: InsertPosition::Below,
+                        input: String::new(),
+                        autocomplete: Autocomplete::new(),
+                    });
+                    return PlaylistKeyResult::None;
+                }
+                _ => {}
             }
-            return None;
+            let result = match action {
+                EditAction::DeleteCurrent => mpd.delete_at(self.cursor as u32),
+                EditAction::DeleteFromCursor => {
+                    let pos = self.cursor as u32;
+                    let count = self.tracks.len() as u32 + 1;
+                    let mut err = Ok(());
+                    for _ in pos..pos + count {
+                        if let Err(e) = mpd.delete_at(pos) {
+                            err = Err(e);
+                            break;
+                        }
+                    }
+                    err
+                }
+                EditAction::MoveUp => mpd.swap_tracks(self.cursor as u32, self.cursor as u32 + 1),
+                EditAction::MoveDown => mpd.swap_tracks(self.cursor as u32, self.cursor as u32 - 1),
+                EditAction::InsertAbove | EditAction::InsertBelow => Ok(()),
+            };
+            if let Err(e) = result {
+                return PlaylistKeyResult::Status(format!("Error: {}", e));
+            }
+            return PlaylistKeyResult::None;
         }
 
-        None
+        PlaylistKeyResult::None
     }
 
     pub fn draw(&mut self, f: &mut Frame, area: Rect) {
@@ -160,11 +238,11 @@ impl PlaylistView {
         let table = Table::new(
             rows,
             [
-                ratatui::layout::Constraint::Percentage(20),
-                ratatui::layout::Constraint::Percentage(5),
-                ratatui::layout::Constraint::Percentage(35),
-                ratatui::layout::Constraint::Percentage(30),
-                ratatui::layout::Constraint::Percentage(10),
+                Constraint::Percentage(20),
+                Constraint::Percentage(5),
+                Constraint::Percentage(35),
+                Constraint::Percentage(30),
+                Constraint::Percentage(10),
             ],
         )
         .header(
@@ -172,9 +250,82 @@ impl PlaylistView {
                 .style(Style::default().add_modifier(Modifier::BOLD)),
         )
         .block(Block::default().borders(Borders::ALL).title("Playlist"))
-        .highlight_style(Style::default().bg(Color::DarkGray));
+        .row_highlight_style(Style::default().bg(Color::DarkGray));
 
         f.render_stateful_widget(table, area, &mut self.table_state);
+
+        // draw autocomplete popup if in insert mode
+        if let Some(ref insert) = self.insert_state {
+            if !insert.input.is_empty() && insert.autocomplete.has_matches() {
+                self.draw_autocomplete_popup(f, area, insert);
+            }
+        }
+    }
+
+    fn draw_autocomplete_popup(&self, f: &mut Frame, area: Rect, insert: &InsertState) {
+        let visible = insert
+            .autocomplete
+            .visible_count
+            .min(insert.autocomplete.matches.len());
+        let popup_height = visible as u16 + 2; // +2 for border
+        let popup_width = (area.width / 2).max(40);
+        let popup_x = area.x + 2;
+
+        // anchor above the cursor row
+        let cursor_row = area.y + self.cursor as u16 + 1; // +1 for header
+        let popup_y = cursor_row.saturating_sub(popup_height);
+
+        let popup_area = Rect {
+            x: popup_x,
+            y: popup_y,
+            width: popup_width,
+            height: popup_height,
+        };
+
+        f.render_widget(Clear, popup_area);
+
+        let items: Vec<ListItem> = insert
+            .autocomplete
+            .matches
+            .iter()
+            .skip(insert.autocomplete.scroll_offset)
+            .take(visible)
+            .enumerate()
+            .map(|(i, s)| {
+                let text = crate::ui::autocomplete::format_song_suggestion(s);
+                let actual_idx = i + insert.autocomplete.scroll_offset;
+                if actual_idx == insert.autocomplete.selected {
+                    ListItem::new(text).style(Style::default().bg(Color::DarkGray))
+                } else {
+                    ListItem::new(text)
+                }
+            })
+            .collect();
+
+        let has_more = insert.autocomplete.matches.len() > visible;
+
+        let list =
+            List::new(items).block(Block::default().borders(Borders::ALL).title(if has_more {
+                format!(
+                    "Suggestions ({}/{})",
+                    insert.autocomplete.selected + 1,
+                    insert.autocomplete.matches.len()
+                )
+            } else {
+                "Suggestions".into()
+            }));
+
+        f.render_widget(list, popup_area);
+
+        if has_more {
+            let mut scrollbar_state = ScrollbarState::new(insert.autocomplete.matches.len())
+                .position(insert.autocomplete.scroll_offset);
+            f.render_stateful_widget(
+                Scrollbar::new(ScrollbarOrientation::VerticalRight),
+                popup_area,
+                &mut scrollbar_state,
+            );
+        }
     }
 }
 
@@ -236,8 +387,16 @@ impl VimSearchable for PlaylistView {
             .iter()
             .enumerate()
             .filter(|(_, s)| {
-                s.title.as_deref().unwrap_or("").to_lowercase().contains(&query.to_lowercase())
-                    || s.artist.as_deref().unwrap_or("").to_lowercase().contains(&query.to_lowercase())
+                s.title
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains(&query.to_lowercase())
+                    || s.artist
+                        .as_deref()
+                        .unwrap_or("")
+                        .to_lowercase()
+                        .contains(&query.to_lowercase())
             })
             .map(|(i, _)| i)
             .collect();

@@ -1,21 +1,21 @@
+use std::time::Duration;
 use mpd::Song;
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
+    Frame,
 };
-use std::time::Duration;
 
 use crate::vim::search::SearchState;
+use crate::ui::command::CommandBar;
 
 pub struct StatusBar {
     pub now_playing: Option<Song>,
     pub elapsed: Option<Duration>,
     pub total: Option<Duration>,
     message: Option<String>,
-    pub progress_bar_area: Option<Rect>,
 }
 
 impl StatusBar {
@@ -25,7 +25,6 @@ impl StatusBar {
             elapsed: None,
             total: None,
             message: None,
-            progress_bar_area: None,
         }
     }
 
@@ -39,7 +38,13 @@ impl StatusBar {
         self.message = msg;
     }
 
-    pub fn draw(&mut self, f: &mut Frame, area: Rect, search_state: Option<(&SearchState, usize)>) {
+    pub fn draw(
+        &mut self,
+        f: &mut Frame,
+        area: Rect,
+        search_state: Option<(&SearchState, usize)>,
+        command_bar: Option<&CommandBar>,
+    ) {
         let has_song = self.now_playing.is_some();
 
         if has_song {
@@ -47,18 +52,14 @@ impl StatusBar {
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Length(1), Constraint::Length(1)])
                 .split(area);
-
             self.draw_progress(f, chunks[0]);
-            self.draw_status(f, chunks[1], search_state);
+            self.draw_status(f, chunks[1], search_state, command_bar);
         } else {
-            self.progress_bar_area = None;
-            self.draw_status(f, area, search_state);
+            self.draw_status(f, area, search_state, command_bar);
         }
     }
 
     fn draw_progress(&mut self, f: &mut Frame, area: Rect) {
-        self.progress_bar_area = Some(area);
-
         let elapsed = self.elapsed.unwrap_or(Duration::ZERO);
         let total = self.total.unwrap_or(Duration::from_secs(1));
 
@@ -96,7 +97,36 @@ impl StatusBar {
         f.render_widget(paragraph, area);
     }
 
-    fn draw_status(&self, f: &mut Frame, area: Rect, search_state: Option<(&SearchState, usize)>) {
+    fn draw_status(
+        &self,
+        f: &mut Frame,
+        area: Rect,
+        search_state: Option<(&SearchState, usize)>,
+        command_bar: Option<&CommandBar>,
+    ) {
+        // command bar takes priority
+        if let Some(cmd) = command_bar {
+            let mut spans = vec![
+                Span::styled(":", Style::default().fg(Color::White)),
+                Span::styled(cmd.input.clone(), Style::default().fg(Color::White)),
+            ];
+            if let Some(ghost) = cmd.ghost_text() {
+                // strip the part already typed from the ghost
+                let typed_query = cmd.input.splitn(2, ' ').nth(1).unwrap_or("");
+                let ghost_remainder = if ghost.to_lowercase().starts_with(&typed_query.to_lowercase()) {
+                    &ghost[typed_query.len()..]
+                } else {
+                    &ghost
+                };
+                spans.push(Span::styled(
+                    ghost_remainder.to_string(),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+            f.render_widget(Paragraph::new(Line::from(spans)), area);
+            return;
+        }
+
         let (text, style) = if let Some((search, match_count)) = search_state {
             if search.active {
                 (
@@ -125,10 +155,7 @@ impl StatusBar {
         } else if let Some(ref song) = self.now_playing {
             (format_now_playing(song), Style::default().fg(Color::Cyan))
         } else {
-            (
-                "No track playing.".to_string(),
-                Style::default().fg(Color::DarkGray),
-            )
+            ("No track playing.".to_string(), Style::default().fg(Color::DarkGray))
         }
     }
 }
