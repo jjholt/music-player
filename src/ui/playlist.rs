@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
     widgets::{
-        Block, Borders, Clear, List, ListItem, ListState, Row, Scrollbar, ScrollbarOrientation,
+        Block, Borders, Clear, List, ListItem, Row, Scrollbar, ScrollbarOrientation,
         ScrollbarState, Table, TableState,
     },
 };
@@ -76,7 +76,7 @@ impl PlaylistView {
     pub fn handle_key(
         &mut self,
         key: KeyEvent,
-        mpd: Option<&mut MpdClient>,
+        mpd: &mut MpdClient,
         all_songs: &[Song],
     ) -> PlaylistKeyResult {
         // insert mode
@@ -89,10 +89,10 @@ impl PlaylistView {
                 (KeyModifiers::NONE, KeyCode::Enter) => {
                     if insert.autocomplete.has_matches() {
                         if let Some(song) = insert.autocomplete.current().cloned() {
-                            let insert_pos = match insert.position {
-                                InsertPosition::Above => self.cursor,
-                                InsertPosition::Below => self.cursor + 1,
-                            };
+                            // let insert_pos = match insert.position {
+                            //     InsertPosition::Above => self.cursor,
+                            //     InsertPosition::Below => self.cursor + 1,
+                            // };
                             self.insert_state = None;
                             return PlaylistKeyResult::AppendAndPlay(vec![song]);
                         }
@@ -134,10 +134,8 @@ impl PlaylistView {
             self.tracks.clear();
             self.cursor = 0;
             self.sync_cursor();
-            if let Some(client) = mpd {
-                if let Err(e) = client.clear_queue() {
-                    return PlaylistKeyResult::Status(format!("Error: {}", e));
-                }
+            if let Err(e) = mpd.clear_queue() {
+                return PlaylistKeyResult::Status(format!("Error: {}", e));
             }
             return PlaylistKeyResult::None;
         }
@@ -146,10 +144,8 @@ impl PlaylistView {
         if let Some(action) = handle_motion_key(self, &mut motion, key) {
             self.motion = motion;
             if action == MotionAction::Select {
-                if let Some(client) = mpd {
-                    if let Err(e) = client.play_at(self.cursor as u32) {
-                        return PlaylistKeyResult::Status(format!("Error: {}", e));
-                    }
+                if let Err(e) = mpd.play_at(self.cursor as u32) {
+                    return PlaylistKeyResult::Status(format!("Error: {}", e));
                 }
             }
             return PlaylistKeyResult::None;
@@ -183,32 +179,26 @@ impl PlaylistView {
                 }
                 _ => {}
             }
-            if let Some(client) = mpd {
-                let result = match action {
-                    EditAction::DeleteCurrent => client.delete_at(self.cursor as u32),
-                    EditAction::DeleteFromCursor => {
-                        let pos = self.cursor as u32;
-                        let count = self.tracks.len() as u32 + 1;
-                        let mut err = Ok(());
-                        for _ in pos..pos + count {
-                            if let Err(e) = client.delete_at(pos) {
-                                err = Err(e);
-                                break;
-                            }
+            let result = match action {
+                EditAction::DeleteCurrent => mpd.delete_at(self.cursor as u32),
+                EditAction::DeleteFromCursor => {
+                    let pos = self.cursor as u32;
+                    let count = self.tracks.len() as u32 + 1;
+                    let mut err = Ok(());
+                    for _ in pos..pos + count {
+                        if let Err(e) = mpd.delete_at(pos) {
+                            err = Err(e);
+                            break;
                         }
-                        err
                     }
-                    EditAction::MoveUp => {
-                        client.swap_tracks(self.cursor as u32, self.cursor as u32 + 1)
-                    }
-                    EditAction::MoveDown => {
-                        client.swap_tracks(self.cursor as u32, self.cursor as u32 - 1)
-                    }
-                    EditAction::InsertAbove | EditAction::InsertBelow => Ok(()),
-                };
-                if let Err(e) = result {
-                    return PlaylistKeyResult::Status(format!("Error: {}", e));
+                    err
                 }
+                EditAction::MoveUp => mpd.swap_tracks(self.cursor as u32, self.cursor as u32 + 1),
+                EditAction::MoveDown => mpd.swap_tracks(self.cursor as u32, self.cursor as u32 - 1),
+                EditAction::InsertAbove | EditAction::InsertBelow => Ok(()),
+            };
+            if let Err(e) = result {
+                return PlaylistKeyResult::Status(format!("Error: {}", e));
             }
             return PlaylistKeyResult::None;
         }
