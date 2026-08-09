@@ -12,7 +12,7 @@ use std::time::Duration;
 use crate::config::Config;
 use crate::mpd::MpdClient;
 use crate::tui::TuiGuard;
-use crate::ui::{ActiveView, App};
+use crate::ui::{ActiveView, App, Mode};
 
 enum AppEvent {
     Key(crossterm::event::KeyEvent),
@@ -69,10 +69,11 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn handle_global_key(app: &mut App<MpdClient>, key: crossterm::event::KeyEvent) -> bool {
-    if app.command_bar.active {
-        app.handle_key(key);
-    } else {
-        match (key.modifiers, key.code) {
+    match app.mode {
+        Mode::Input => {
+            app.handle_key(key);
+        }
+        Mode::Normal => match (key.modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::Char('q')) => return true,
             (KeyModifiers::CONTROL, KeyCode::Enter) => {
                 app.trigger_database_update();
@@ -89,6 +90,9 @@ fn handle_global_key(app: &mut App<MpdClient>, key: crossterm::event::KeyEvent) 
             (KeyModifiers::NONE, KeyCode::Char('1')) => {
                 app.set_view(ActiveView::Playlist);
             }
+            (KeyModifiers::NONE, KeyCode::Char('3')) => {
+                app.set_view(ActiveView::Browse);
+            }
             (KeyModifiers::NONE, KeyCode::Char('4')) => {
                 app.set_view(ActiveView::Library);
             }
@@ -101,7 +105,7 @@ fn handle_global_key(app: &mut App<MpdClient>, key: crossterm::event::KeyEvent) 
             _ => {
                 app.handle_key(key);
             }
-        }
-    };
+        },
+    }
     false
 }
