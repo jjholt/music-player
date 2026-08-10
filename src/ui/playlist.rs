@@ -47,6 +47,7 @@ pub struct PlaylistView {
     pub search_matches: Vec<usize>,
     pub search_match_idx: usize,
     pub insert_state: Option<InsertState>,
+    pub current_song_id: Option<u32>,
     table_state: TableState,
 }
 
@@ -62,7 +63,12 @@ impl PlaylistView {
             search_match_idx: 0,
             insert_state: None,
             table_state: TableState::default(),
+            current_song_id: None,
         }
+    }
+
+    pub fn set_current_song_id(&mut self, id: Option<u32>) {
+        self.current_song_id = id;
     }
 
     pub fn set_tracks(&mut self, tracks: Vec<Song>) {
@@ -221,6 +227,8 @@ impl PlaylistView {
                     .duration
                     .map(|d| format!("{}:{:02}", d.as_secs() / 60, d.as_secs() % 60))
                     .unwrap_or_else(|| "-".into());
+                let is_playing = s.place.map(|p| p.id.0) == self.current_song_id
+                    && self.current_song_id.is_some();
                 let row = Row::new(vec![
                     artist.to_string(),
                     track.to_string(),
@@ -228,7 +236,10 @@ impl PlaylistView {
                     album.to_string(),
                     time,
                 ]);
-                if self.search_matches.contains(&i) {
+
+                if is_playing {
+                    row.style(Style::default().bold())
+                } else if self.search_matches.contains(&i) {
                     row.style(Style::default().fg(Color::Yellow))
                 } else {
                     row

@@ -138,6 +138,7 @@ impl App<MpdClient> {
                 let new_id = status.song.map(|p| p.id.0);
                 if new_id != self.current_song_id {
                     self.current_song_id = new_id;
+                    self.playlist.set_current_song_id(self.current_song_id);
                     match client.current_song() {
                         Ok(song) => self.status_bar.set_now_playing(song, status.elapsed),
                         Err(e) => self.status_bar.set_message(Ok(format!("Error: {}", e))),
