@@ -276,8 +276,8 @@ impl BrowseView {
 
         // normal mode — field/button navigation
         match (key.modifiers, key.code) {
-            (KeyModifiers::NONE, KeyCode::Tab) => self.focus_next(),
-            (KeyModifiers::SHIFT, KeyCode::BackTab) => self.focus_prev(),
+            (KeyModifiers::NONE, KeyCode::Tab) => self.focus = BrowseFocus::Search,
+            (KeyModifiers::SHIFT, KeyCode::BackTab) => self.focus = BrowseFocus::Reset,
             (KeyModifiers::NONE, KeyCode::Char('h')) => self.focus_prev(),
             (KeyModifiers::NONE, KeyCode::Char('l')) => self.focus_next(),
             (KeyModifiers::NONE, KeyCode::Char('i')) | (KeyModifiers::NONE, KeyCode::Char('a')) => {
@@ -442,7 +442,7 @@ impl BrowseView {
                         Style::default()
                     }),
             )
-            .highlight_style(Style::default().bg(Color::DarkGray));
+            .highlight_style(Style::default().bg(Color::Rgb(40, 44, 52)));
 
         f.render_stateful_widget(list, area, &mut self.list_state);
     }
