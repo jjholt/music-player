@@ -251,7 +251,7 @@ impl PlaylistView {
                 .style(Style::default().add_modifier(Modifier::BOLD)),
         )
         .block(Block::default().borders(Borders::ALL).title("Playlist"))
-        .row_highlight_style(Style::default().bg(Color::DarkGray));
+        .row_highlight_style(Style::default().bg(Color::Rgb(40, 44, 52)));
 
         f.render_stateful_widget(table, area, &mut self.table_state);
 
@@ -296,7 +296,7 @@ impl PlaylistView {
                 let text = crate::ui::autocomplete::format_song_suggestion(s);
                 let actual_idx = i + insert.autocomplete.scroll_offset;
                 if actual_idx == insert.autocomplete.selected {
-                    ListItem::new(text).style(Style::default().bg(Color::DarkGray))
+                    ListItem::new(text).style(Style::default().bg(Color::Rgb(40, 44, 52)))
                 } else {
                     ListItem::new(text)
                 }

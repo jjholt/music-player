@@ -369,7 +369,7 @@ impl LibraryView {
             ])
             .split(area);
 
-        let focused_style = Style::default().bg(Color::DarkGray);
+        let focused_style = Style::default().bg(Color::Rgb(40, 44, 52));
         let normal_style = Style::default();
 
         let artist_items: Vec<ListItem> = self
