@@ -6,7 +6,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::ui::command::CommandBar;
 use crate::vim::search::SearchState;
@@ -16,6 +16,7 @@ pub struct StatusBar {
     pub elapsed: Option<Duration>,
     pub total: Option<Duration>,
     message: Result<String, String>,
+    message_time: Option<Instant>,
 }
 
 impl StatusBar {
@@ -25,6 +26,7 @@ impl StatusBar {
             elapsed: None,
             total: None,
             message: Ok(String::new()),
+            message_time: None,
         }
     }
 
@@ -35,6 +37,7 @@ impl StatusBar {
 
     pub fn set_message(&mut self, msg: Result<String, String>) {
         self.message = msg;
+        self.message_time = Some(Instant::now());
     }
 
     pub fn draw(
@@ -122,29 +125,24 @@ impl StatusBar {
                 };
                 spans.push(Span::styled(
                     ghost_remainder.to_string(),
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().bg(Color::Rgb(40, 44, 52)),
                 ));
             }
             f.render_widget(Paragraph::new(Line::from(spans)), area);
             return;
         }
 
-        let (text, style) = if let Some((search, match_count)) = search_state {
-            if search.active {
-                (
-                    format!(
-                        "/{}_ ({} match{})",
-                        search.query,
-                        match_count,
-                        if match_count == 1 { "" } else { "es" }
-                    ),
-                    Style::default().fg(Color::Yellow),
-                )
-            } else {
-                self.normal_content()
-            }
-        } else {
-            self.normal_content()
+        let (text, style) = match search_state {
+            Some((search, match_count)) if search.active => (
+                format!(
+                    "/{}_ ({} match{})",
+                    search.query,
+                    match_count,
+                    if match_count == 1 { "" } else { "es" }
+                ),
+                Style::default().fg(Color::Yellow),
+            ),
+            _ => self.normal_content(),
         };
 
         let paragraph = Paragraph::new(Line::from(Span::styled(text, style)));
@@ -152,11 +150,12 @@ impl StatusBar {
     }
 
     fn normal_content(&self) -> (String, Style) {
-        match &self.message {
-            Ok(msg) => (msg.clone(), Style::default().fg(Color::White)),
-            Err(msg) => (msg.clone(), Style::default().fg(Color::Red)),
-        };
-        if let Some(song) = &self.now_playing {
+        if self.message_time.is_some_and(|t| t.elapsed() < Duration::from_secs(5)) {
+            match &self.message {
+                Ok(msg) => (msg.clone(), Style::default().fg(Color::White)),
+                Err(msg) => (msg.clone(), Style::default().fg(Color::Red)),
+            }
+        } else if let Some(song) = &self.now_playing {
             (format_now_playing(song), Style::default().fg(Color::Cyan))
         } else {
             (
