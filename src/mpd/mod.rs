@@ -109,4 +109,11 @@ impl MpdClient {
             .map_err(|e| anyhow::anyhow!("Failed to skip to next: {}", e))
     }
 
+    pub fn volume(&mut self, increment: i8) -> anyhow::Result<()> {
+        let volume = self.client.status()?.volume;
+        let new_volume = (volume + increment).clamp(0, 100);
+        self.client
+            .volume(new_volume)
+            .map_err(|_| anyhow::anyhow!("Unable to update volume"))
+    }
 }

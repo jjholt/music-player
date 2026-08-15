@@ -181,14 +181,21 @@ impl App<MpdClient> {
         self
     }
 
-    fn mpd_action<F>(&mut self, action: F) -> &mut Self
+    fn mpd_action<F>(&mut self, client_fn: F) -> &mut Self
     where
         F: FnOnce(&mut MpdClient) -> anyhow::Result<()>,
     {
-        if let Err(e) = action(&mut self.mpd) {
+        if let Err(e) = client_fn(&mut self.mpd) {
             self.status_bar.set_message(Err(format!("Error: {}", e)));
         }
         self
+    }
+
+    pub fn volume_down(&mut self) -> &mut Self {
+        self.mpd_action(|client| client.volume(-5))
+    }
+    pub fn volume_up(&mut self) -> &mut Self {
+        self.mpd_action(|client| client.volume(5))
     }
 
     pub fn seek_backward(&mut self) -> &mut Self {

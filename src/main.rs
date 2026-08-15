@@ -80,6 +80,12 @@ fn handle_global_key(app: &mut App<MpdClient>, key: crossterm::event::KeyEvent) 
             (KeyModifiers::NONE, KeyCode::Char('u')) => {
                 app.trigger_database_update();
             }
+            (KeyModifiers::NONE, KeyCode::Char('-')) => {
+                app.volume_down();
+            }
+            (KeyModifiers::NONE, KeyCode::Char('+')) => {
+                app.volume_up();
+            }
             (KeyModifiers::NONE, KeyCode::Char('p')) => {
                 app.toggle_pause();
             }
